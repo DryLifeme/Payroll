@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام كشف المرتبات وسجل الموظفين</title>
+    <!-- PWA: manifest وإعدادات التثبيت كتطبيق -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2c3e50">
+    <link rel="icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="كشف المرتبات">
+    <!-- مكتبة ExcelJS لتوليد ملفات إكسيل منسقة وملونة احترافياً -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <!-- مكتبة FileSaver لحفظ الملف -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root {
+            --primary: #2c3e50;
+            --secondary: #27ae60;
+            --accent: #2980b9;
+            --bg: #f4f7f6;
+            --danger: #c0392b;
+            --warning: #f39c12;
+            --excel: #1e7e34;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 15px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        h2, h3 {
+            margin-top: 0;
+            color: var(--primary);
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 0.85em;
+            color: #444;
+        }
+
+        input {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 0.95em;
+        }
+
+        input[readonly] {
+            background-color: #eef2f5;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .section-title {
+            grid-column: 1 / -1;
+            font-weight: bold;
+            color: var(--accent);
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+            margin-top: 10px;
+            font-size: 0.95em;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background-color: var(--secondary);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.9em;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn:hover { opacity: 0.9; }
+        .btn-print { background-color: var(--primary); }
+        .btn-export { background-color: var(--accent); }
+        .btn-excel { background-color: var(--excel); }
+        .btn-import { background-color: var(--warning); }
+        .btn-edit { background-color: #f39c12; }
+        .btn-sm { padding: 4px 8px; font-size: 0.8em; }
+        .btn-delete { background-color: var(--danger); }
+
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 0.82em;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 4px;
+            text-align: center;
+        }
+
+        th {
+            background-color: var(--primary);
+            color: white;
+            white-space: nowrap;
+        }
+
+        .dept-header {
+            background-color: #eaeded;
+            text-align: right;
+            font-weight: bold;
+            padding: 8px;
+            font-size: 1em;
+            color: var(--primary);
+        }
+
+        .total-row {
+            background-color: #e8f8f5;
+            font-weight: bold;
+            font-size: 1em;
+        }
+
+        .print-only-header {
+            display: none;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 8px;
+        }
+
+        /* توقيعات الطباعة للكشف المجمع */
+        .sheet-signatures {
+            display: none;
+            margin-top: 30px;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 11pt;
+        }
+
+        .sig-hr {
+            text-align: right;
+        }
+
+        .sig-ceo {
+            text-align: left;
+            margin-top: 25px; /* تجعل رئيس مجلس الإدارة أنزل شوية من الموارد البشرية */
+        }
+
+        #payslip-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .payslip-card {
+            background: #fff;
+            width: 650px;
+            padding: 25px;
+            border: 2px solid var(--primary);
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+
+        .payslip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .payslip-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+
+        @media print {
+            @page {
+                size: A4 landscape;
+                margin: 8mm;
+            }
+
+            body { 
+                background: white !important; 
+                padding: 0 !important; 
+                margin: 0 !important;
+                font-size: 9pt;
+            }
+
+            .no-print { display: none !important; }
+            .card { box-shadow: none !important; padding: 0 !important; border: none !important; margin: 0 !important; }
+            .table-responsive { overflow: visible !important; }
+
+            .print-only-header { 
+                display: flex !important; 
+                justify-content: space-between; 
+                align-items: center; 
+            }
+
+            /* إظهار التوقيعات عند طباعة الكشف المجمع فقط */
+            body:not(.printing-slip) .sheet-signatures {
+                display: block !important;
+                page-break-inside: avoid;
+            }
+
+            table {
+                width: 100% !important;
+                table-layout: auto !important;
+                font-size: 8pt !important;
+            }
+
+            th, td {
+                padding: 4px 2px !important;
+                word-wrap: break-word;
+            }
+
+            th {
+                background-color: #2c3e50 !important;
+                color: white !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .dept-header {
+                background-color: #eaeded !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            .total-row {
+                background-color: #e8f8f5 !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+
+            body.printing-slip .container {
+                display: none !important;
+            }
+            body.printing-slip #payslip-modal {
+                display: block !important;
+                position: absolute !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                background: none !important;
+            }
+            body.printing-slip .payslip-card {
+                width: 100% !important;
+                border: 1px solid #000 !important;
+                box-shadow: none !important;
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card no-print">
+        <h2 id="formTitle">تسجيل موظف جديد بالحسابات</h2>
+        <form id="employeeForm">
+            <input type="hidden" id="editEmpId" value="">
+            <div class="form-grid">
+                <!-- 1. البيانات الوظيفية -->
+                <div class="section-title">1. البيانات الوظيفية</div>
+                <div class="form-group">
+                    <label>الإدارة</label>
+                    <input type="text" id="deptName" required placeholder="مثال: الإدارة المالية">
+                </div>
+                <div class="form-group">
+                    <label>القسم</label>
+                    <input type="text" id="sectionName" placeholder="مثال: الحسابات">
+                </div>
+                <div class="form-group">
+                    <label>الوظيفة</label>
+                    <input type="text" id="jobTitle" required placeholder="مثال: محاسب أول">
+                </div>
+                <div class="form-group">
+                    <label>اسم الموظف</label>
+                    <input type="text" id="empName" required placeholder="الاسم ثلاثي">
+                </div>
+
+                <!-- 2. المرتب والبدلات -->
+                <div class="section-title">2. المرتب والبدلات</div>
+                <div class="form-group">
+                    <label>المرتب الأساسي</label>
+                    <input type="number" id="basicSalary" class="calc-trigger" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>بدل انتقال</label>
+                    <input type="number" id="transportAllowance" class="calc-trigger" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>بدل طبيعة عمل</label>
+                    <input type="number" id="natureAllowance" class="calc-trigger" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>بدل مخاطر</label>
+                    <input type="number" id="riskAllowance" class="calc-trigger" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>بدل انتظام</label>
+                    <input type="number" id="regularityAllowance" class="calc-trigger" value="0" step="any">
+                </div>
+
+                <!-- 3. المعدل اليومي والساعة -->
+                <div class="section-title">3. المعدل اليومي والساعة (يحتسب تلقائياً: الأساسي + البدلات)</div>
+                <div class="form-group">
+                    <label>إجمالي المرتب الشامل</label>
+                    <input type="number" id="totalPackageInput" readonly value="0.00">
+                </div>
+                <div class="form-group">
+                    <label>أجر اليوم</label>
+                    <input type="number" id="dailyRate" readonly value="0.00">
+                </div>
+                <div class="form-group">
+                    <label>أجر الساعة</label>
+                    <input type="number" id="hourlyRate" readonly value="0.00">
+                </div>
+
+                <!-- 4. الإضافي والزيادات -->
+                <div class="section-title">4. الإضافي والزيادات (اليوم الإضافي = 2 يوم)</div>
+                <div class="form-group">
+                    <label>إضافي أيام (عدد الأيام)</label>
+                    <input type="number" id="overtimeDaysCount" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>إضافي ساعات (عدد الساعات)</label>
+                    <input type="number" id="overtimeHoursCount" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>مكافآت / زيادات أخرى</label>
+                    <input type="number" id="bonus" value="0" step="any">
+                </div>
+
+                <!-- 5. السُلف والاستقطاعات -->
+                <div class="section-title">5. السُلف والاستقطاعات والتأخيرات</div>
+                <div class="form-group">
+                    <label>السُلفة</label>
+                    <input type="number" id="advance" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>أيام الغياب</label>
+                    <input type="number" id="absentDays" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>تأخيرات (بالساعات)</label>
+                    <input type="number" id="delayHours" value="0" step="any">
+                </div>
+                <div class="form-group">
+                    <label>استقطاعات أخرى</label>
+                    <input type="number" id="otherDeductions" value="0" step="any">
+                </div>
+
+                <!-- 6. إعدادات الطباعة والشيك -->
+                <div class="section-title">6. إعدادات الكشف والتاريخ للطباعة والشيك</div>
+                <div class="form-group">
+                    <label>عنوان الكشف / الشيك</label>
+                    <input type="text" id="slipTitle" placeholder="مثال: كشف مرتبات شهر أغسطس">
+                </div>
+                <div class="form-group">
+                    <label>تاريخ الكشف / الشيك</label>
+                    <input type="date" id="slipDateInput">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <button type="submit" id="submitBtn" class="btn">حفظ الموظف للكشف</button>
+                <button type="button" id="cancelEditBtn" class="btn btn-delete" style="display:none;" onclick="resetForm()">إلغاء التعديل</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- كشف الحضور والمرتبات المجمع -->
+    <div class="card" id="printArea">
+        <div class="print-only-header">
+            <div>
+                <h2 id="printMainTitle" style="margin: 0; color: #000;">كشف المرتبات</h2>
+            </div>
+            <div>
+                <strong id="printMainDate">التاريخ: </strong>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;" class="no-print">
+            <h2>كشف المرتبات وسجل الموظفين</h2>
+            <div class="btn-group">
+                <button class="btn btn-excel" onclick="exportToExcelFormatted()">تحميل Excel 📊</button>
+                <button class="btn btn-export" onclick="exportData()">حفظ نسخة احتياطية 📥</button>
+                <button class="btn btn-import" onclick="document.getElementById('fileInput').click()">استعادة نسخة 📤</button>
+                <input type="file" id="fileInput" style="display: none;" accept=".json" onchange="importData(event)">
+                <button class="btn btn-print" onclick="printFullSheet()">طباعة الكشف 🖨️</button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table id="payrollTable">
+                <thead>
+                    <tr>
+                        <th>م</th>
+                        <th>اسم الموظف</th>
+                        <th>القسم</th>
+                        <th>الوظيفة</th>
+                        <th>المرتب الأساسي</th>
+                        <th>أجر اليوم</th>
+                        <th>أجر الساعة</th>
+                        <th>بدل انتقال</th>
+                        <th>بدل طبيعة عمل</th>
+                        <th>بدل مخاطر</th>
+                        <th>بدل انتظام</th>
+                        <th>إضافي يوم</th>
+                        <th>إضافي ساعات</th>
+                        <th>السُلفة</th>
+                        <th>إجمالي المستحق</th>
+                        <th>الاستقطاعات</th>
+                        <th>صافي المرتب</th>
+                        <th class="no-print">إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+                <tfoot>
+                    <tr class="total-row">
+                        <td colspan="16" style="text-align: left;">إجمالي صافي المرتبات:</td>
+                        <td id="grandTotal">0</td>
+                        <td class="no-print"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <!-- قسم التوقيعات الخاص بطباعة الكشف المجمع -->
+        <div class="sheet-signatures">
+            <div class="sig-hr">
+                إدارة الموارد البشرية: .........................
+            </div>
+            <div class="sig-ceo">
+                يعتمد ،، رئيس مجلس الإدارة: .........................
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- نافذة شيك المرتب الفردي -->
+<div id="payslip-modal">
+    <div class="payslip-card">
+        <div class="payslip-header">
+            <div style="text-align: right;">
+                <h3 id="slipDeptTop" style="margin: 0; color: var(--primary);"></h3>
+                <small id="slipSectionTop"></small>
+            </div>
+            <div style="text-align: center;">
+                <h2 id="slipCustomTitle" style="margin:0; font-size: 1.1em; color: var(--accent);"></h2>
+            </div>
+            <div style="text-align: left;">
+                <span id="slipDateDisplay" style="font-weight: bold; font-size: 0.9em; display: block;"></span>
+            </div>
+        </div>
+
+        <div class="payslip-row"><span>الوظيفة:</span><strong id="slipJob"></strong></div>
+        <div class="payslip-row"><span>اسم الموظف:</span><strong id="slipName"></strong></div>
+        <hr>
+        <div class="payslip-row"><span>المرتب الأساسي:</span><span id="slipBasic"></span></div>
+        <div class="payslip-row"><span>إجمالي البدلات:</span><span id="slipAllowances"></span></div>
+        <div class="payslip-row"><span>إجمالي الإضافي:</span><span id="slipOvertime"></span></div>
+        
+        <div class="payslip-row" id="slipBonusRow" style="display: none; color: #27ae60; font-weight: bold;">
+            <span>مكافآت / زيادات أخرى:</span><span id="slipBonus"></span>
+        </div>
+
+        <div class="payslip-row" style="color: green; font-weight: bold; background: #f8f9fa; padding: 2px 5px;"><span>إجمالي المستحق:</span><span id="slipGross"></span></div>
+        <hr>
+        <div class="payslip-row" style="color: red;"><span>السُلفة:</span><span id="slipAdvance"></span></div>
+        <div class="payslip-row" style="color: red;"><span>إجمالي الاستقطاعات:</span><span id="slipDeductions"></span></div>
+        <hr>
+        <div class="payslip-row" style="font-size: 1.2em; font-weight: bold; color: var(--secondary); background: #e8f8f5; padding: 5px;">
+            <span>صافي المرتب المستحق:</span><span id="slipNet"></span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; margin-top: 30px; border-top: 1px solid #ccc; padding-top: 10px;">
+            <div>توقيع الموظف بالاستلام: .................</div>
+            <div>اعتماد الحسابات: .................</div>
+        </div>
+
+        <div style="margin-top: 15px; text-align: center;" class="no-print">
+            <button class="btn btn-print" onclick="printSingleSlip()">طباعة 🖨️</button>
+            <button class="btn btn-delete" onclick="closePayslip()">إغلاق</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let employees = [];
+    const OVERTIME_DAY_FACTOR = 2.0; 
+    const OVERTIME_HOUR_FACTOR = 1.35;
+
+    document.getElementById('slipDateInput').valueAsDate = new Date();
+
+    document.querySelectorAll('.calc-trigger').forEach(input => {
+        input.addEventListener('input', calculateRates);
+    });
+
+    function calculateRates() {
+        const basic = parseFloat(document.getElementById('basicSalary').value) || 0;
+        const transport = parseFloat(document.getElementById('transportAllowance').value) || 0;
+        const nature = parseFloat(document.getElementById('natureAllowance').value) || 0;
+        const risk = parseFloat(document.getElementById('riskAllowance').value) || 0;
+        const regularity = parseFloat(document.getElementById('regularityAllowance').value) || 0;
+
+        const totalPackage = basic + transport + nature + risk + regularity;
+        const dailyRate = totalPackage / 30;
+        const hourlyRate = dailyRate / 8;
+
+        document.getElementById('totalPackageInput').value = totalPackage.toFixed(2);
+        document.getElementById('dailyRate').value = dailyRate.toFixed(2);
+        document.getElementById('hourlyRate').value = hourlyRate.toFixed(2);
+    }
+
+    function formatDeduction(amount) {
+        if (!amount || Math.abs(amount) < 0.001) return "0";
+        return Math.abs(amount).toLocaleString('ar-EG', {maximumFractionDigits:2});
+    }
+
+    document.getElementById('employeeForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const basic = parseFloat(document.getElementById('basicSalary').value) || 0;
+        const transport = parseFloat(document.getElementById('transportAllowance').value) || 0;
+        const nature = parseFloat(document.getElementById('natureAllowance').value) || 0;
+        const risk = parseFloat(document.getElementById('riskAllowance').value) || 0;
+        const regularity = parseFloat(document.getElementById('regularityAllowance').value) || 0;
+
+        const totalPackage = basic + transport + nature + risk + regularity;
+        const dailyRate = totalPackage / 30;
+        const hourlyRate = dailyRate / 8;
+
+        const overtimeDaysCount = parseFloat(document.getElementById('overtimeDaysCount').value) || 0;
+        const overtimeHoursCount = parseFloat(document.getElementById('overtimeHoursCount').value) || 0;
+        const bonus = parseFloat(document.getElementById('bonus').value) || 0;
+
+        const overtimeDaysAmount = overtimeDaysCount * dailyRate * OVERTIME_DAY_FACTOR;
+        const overtimeHoursAmount = overtimeHoursCount * hourlyRate * OVERTIME_HOUR_FACTOR;
+
+        const totalAllowances = transport + nature + risk + regularity;
+        const totalOvertime = overtimeDaysAmount + overtimeHoursAmount;
+
+        const grossSalary = totalPackage + totalOvertime + bonus;
+
+        const absentDays = parseFloat(document.getElementById('absentDays').value) || 0;
+        const delayHours = parseFloat(document.getElementById('delayHours').value) || 0;
+        
+        const absentDeduction = absentDays * dailyRate;
+        const delayDeduction = delayHours * hourlyRate;
+        const timeDeductionsVal = absentDeduction + delayDeduction;
+
+        const advance = parseFloat(document.getElementById('advance').value) || 0;
+        const otherDeductions = parseFloat(document.getElementById('otherDeductions').value) || 0;
+        
+        const totalDeductions = advance + timeDeductionsVal + otherDeductions;
+        const netSalary = grossSalary - totalDeductions;
+
+        const editId = document.getElementById('editEmpId').value;
+
+        const empData = {
+            id: editId ? parseInt(editId) : Date.now(),
+            dept: document.getElementById('deptName').value.trim(),
+            section: document.getElementById('sectionName').value.trim() || '-',
+            jobTitle: document.getElementById('jobTitle').value.trim(),
+            name: document.getElementById('empName').value.trim(),
+            basic,
+            transport,
+            nature,
+            risk,
+            regularity,
+            totalAllowances,
+            totalPackage,
+            dailyRate,
+            hourlyRate,
+            overtimeDaysCount,
+            overtimeHoursCount,
+            overtimeDaysAmount,
+            overtimeHoursAmount,
+            totalOvertime,
+            bonus,
+            grossSalary,
+            advance,
+            absentDays,
+            delayHours,
+            otherDeductions,
+            totalDeductions,
+            netSalary,
+            slipTitle: document.getElementById('slipTitle').value.trim() || 'كشف المرتبات',
+            slipDate: document.getElementById('slipDateInput').value || new Date().toISOString().slice(0, 10)
+        };
+
+        if (editId) {
+            const index = employees.findIndex(e => e.id === parseInt(editId));
+            if (index !== -1) employees[index] = empData;
+        } else {
+            employees.push(empData);
+        }
+
+        renderTable();
+        resetForm();
+    });
+
+    function resetForm() {
+        document.getElementById('editEmpId').value = '';
+        document.getElementById('formTitle').innerText = 'تسجيل موظف جديد بالحسابات';
+        document.getElementById('submitBtn').innerText = 'حفظ الموظف للكشف';
+        document.getElementById('cancelEditBtn').style.display = 'none';
+
+        document.querySelectorAll('#employeeForm input:not(#deptName):not(#sectionName)').forEach(i => {
+            if(i.readOnly) return;
+            if(i.type === 'date') i.valueAsDate = new Date();
+            else i.value = i.type === 'number' ? '0' : '';
+        });
+        calculateRates();
+    }
+
+    function editEmp(id) {
+        const emp = employees.find(e => e.id === id);
+        if (!emp) return;
+
+        document.getElementById('editEmpId').value = emp.id;
+        document.getElementById('formTitle').innerText = `تعديل بيانات الموظف: ${emp.name}`;
+        document.getElementById('submitBtn').innerText = 'حفظ التعديلات';
+        document.getElementById('cancelEditBtn').style.display = 'inline-flex';
+
+        document.getElementById('deptName').value = emp.dept;
+        document.getElementById('sectionName').value = emp.section;
+        document.getElementById('jobTitle').value = emp.jobTitle;
+        document.getElementById('empName').value = emp.name;
+        document.getElementById('basicSalary').value = emp.basic;
+        document.getElementById('transportAllowance').value = emp.transport;
+        document.getElementById('natureAllowance').value = emp.nature;
+        document.getElementById('riskAllowance').value = emp.risk;
+        document.getElementById('regularityAllowance').value = emp.regularity;
+        document.getElementById('overtimeDaysCount').value = emp.overtimeDaysCount;
+        document.getElementById('overtimeHoursCount').value = emp.overtimeHoursCount;
+        document.getElementById('bonus').value = emp.bonus || 0;
+        document.getElementById('advance').value = emp.advance;
+        document.getElementById('absentDays').value = emp.absentDays;
+        document.getElementById('delayHours').value = emp.delayHours || 0;
+        document.getElementById('otherDeductions').value = emp.otherDeductions;
+        document.getElementById('slipTitle').value = emp.slipTitle || '';
+        if(emp.slipDate) document.getElementById('slipDateInput').value = emp.slipDate;
+
+        calculateRates();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+
+        const departments = {};
+        employees.forEach(emp => {
+            if (!departments[emp.dept]) departments[emp.dept] = [];
+            departments[emp.dept].push(emp);
+        });
+
+        let grandTotal = 0;
+        let counter = 1;
+
+        for (const dept in departments) {
+            const deptRow = document.createElement('tr');
+            deptRow.innerHTML = `<td colspan="18" class="dept-header">إدارة: ${dept}</td>`;
+            tbody.appendChild(deptRow);
+
+            departments[dept].forEach(emp => {
+                grandTotal += emp.netSalary;
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${counter++}</td>
+                    <td><strong>${emp.name}</strong></td>
+                    <td>${emp.section}</td>
+                    <td>${emp.jobTitle}</td>
+                    <td>${emp.basic.toLocaleString('ar-EG', {maximumFractionDigits:2})}</td>
+                    <td>${emp.dailyRate.toFixed(2)}</td>
+                    <td>${emp.hourlyRate.toFixed(2)}</td>
+                    <td>${emp.transport.toLocaleString('ar-EG', {maximumFractionDigits:2})}</td>
+                    <td>${emp.nature.toLocaleString('ar-EG', {maximumFractionDigits:2})}</td>
+                    <td>${emp.risk.toLocaleString('ar-EG', {maximumFractionDigits:2})}</td>
+                    <td>${emp.regularity.toLocaleString('ar-EG', {maximumFractionDigits:2})}</td>
+                    <td>${emp.overtimeDaysAmount.toLocaleString('ar-EG', {maximumFractionDigits:2})}</td>
+                    <td>${emp.overtimeHoursAmount.toLocaleString('ar-EG', {maximumFractionDigits:2})}</td>
+                    <td style="color:${emp.advance > 0 ? 'red' : 'inherit'};">${formatDeduction(emp.advance)}</td>
+                    <td style="color:green;"><strong>${emp.grossSalary.toLocaleString('ar-EG', {maximumFractionDigits:2})}</strong></td>
+                    <td style="color:${emp.totalDeductions > 0 ? 'red' : 'inherit'};">${formatDeduction(emp.totalDeductions)}</td>
+                    <td style="background:#e8f8f5;"><strong>${emp.netSalary.toLocaleString('ar-EG', {maximumFractionDigits:2})}</strong></td>
+                    <td class="no-print">
+                        <button class="btn btn-sm btn-edit" onclick="editEmp(${emp.id})">تعديل ✏️</button>
+                        <button class="btn btn-sm btn-print" onclick="openPayslip(${emp.id})">شيك 📄</button>
+                        <button class="btn btn-sm btn-delete" onclick="deleteEmp(${emp.id})">حذف</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('grandTotal').innerText = grandTotal.toLocaleString('ar-EG', {maximumFractionDigits:2});
+    }
+
+    async function exportToExcelFormatted() {
+        if (employees.length === 0) {
+            alert('لا توجد بيانات موظفين للتصدير!');
+            return;
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('كشف المرتبات', { views: [{ rtl: true }] });
+
+        const headers = [
+            "م", "اسم الموظف", "القسم", "الوظيفة", "المرتب الأساسي",
+            "أجر اليوم", "أجر الساعة", "بدل انتقال", "بدل طبيعة عمل", 
+            "بدل مخاطر", "بدل انتظام", "إضافي يوم", "إضافي ساعات", 
+            "السُلفة", "إجمالي المستحق", "الاستقطاعات", "صافي المرتب"
+        ];
+
+        const headerRow = worksheet.addRow(headers);
+        headerRow.height = 28;
+
+        headerRow.eachCell((cell) => {
+            cell.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2C3E50' } };
+            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            cell.border = {
+                top: { style: 'thin', color: { argb: 'BDC3C7' } },
+                left: { style: 'thin', color: { argb: 'BDC3C7' } },
+                bottom: { style: 'medium', color: { argb: '2C3E50' } },
+                right: { style: 'thin', color: { argb: 'BDC3C7' } }
+            };
+        });
+
+        const departments = {};
+        employees.forEach(emp => {
+            if (!departments[emp.dept]) departments[emp.dept] = [];
+            departments[emp.dept].push(emp);
+        });
+
+        let counter = 1;
+        let grandTotalNet = 0;
+
+        for (const dept in departments) {
+            const deptRow = worksheet.addRow([`إدارة: ${dept}`]);
+            deptRow.height = 24;
+            worksheet.mergeCells(deptRow.number, 1, deptRow.number, headers.length);
+            
+            const deptCell = deptRow.getCell(1);
+            deptCell.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: '2C3E50' } };
+            deptCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EAEDED' } };
+            deptCell.alignment = { vertical: 'middle', horizontal: 'right' };
+            
+            for (let i = 1; i <= headers.length; i++) {
+                deptRow.getCell(i).border = {
+                    top: { style: 'thin', color: { argb: 'BDC3C7' } },
+                    left: { style: 'thin', color: { argb: 'BDC3C7' } },
+                    bottom: { style: 'thin', color: { argb: 'BDC3C7' } },
+                    right: { style: 'thin', color: { argb: 'BDC3C7' } }
+                };
+            }
+
+            departments[dept].forEach(emp => {
+                grandTotalNet += emp.netSalary;
+
+                const rowValues = [
+                    counter++,
+                    emp.name,
+                    emp.section,
+                    emp.jobTitle,
+                    emp.basic,
+                    parseFloat(emp.dailyRate.toFixed(2)),
+                    parseFloat(emp.hourlyRate.toFixed(2)),
+                    emp.transport,
+                    emp.nature,
+                    emp.risk,
+                    emp.regularity,
+                    parseFloat(emp.overtimeDaysAmount.toFixed(2)),
+                    parseFloat(emp.overtimeHoursAmount.toFixed(2)),
+                    emp.advance,
+                    parseFloat(emp.grossSalary.toFixed(2)),
+                    parseFloat(emp.totalDeductions.toFixed(2)),
+                    parseFloat(emp.netSalary.toFixed(2))
+                ];
+
+                const empRow = worksheet.addRow(rowValues);
+                empRow.height = 20;
+
+                empRow.eachCell((cell, colNumber) => {
+                    cell.font = { name: 'Segoe UI', size: 10 };
+                    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'E0E0E0' } },
+                        left: { style: 'thin', color: { argb: 'E0E0E0' } },
+                        bottom: { style: 'thin', color: { argb: 'E0E0E0' } },
+                        right: { style: 'thin', color: { argb: 'E0E0E0' } }
+                    };
+
+                    if (colNumber >= 5 && colNumber <= 17) {
+                        cell.numFmt = '#,##0.00';
+                    }
+
+                    if (colNumber === 17) {
+                        cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: '1E7E34' } };
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E8F8F5' } };
+                    }
+                    if (colNumber === 15) {
+                        cell.font = { name: 'Segoe UI', size: 10, bold: true };
+                    }
+                });
+            });
+        }
+
+        const totalRow = worksheet.addRow([]);
+        totalRow.height = 26;
+        worksheet.mergeCells(totalRow.number, 1, totalRow.number, 16);
+
+        const totalLabelCell = totalRow.getCell(1);
+        totalLabelCell.value = 'إجمالي صافي المرتبات:';
+        totalLabelCell.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: '1E7E34' } };
+        totalLabelCell.alignment = { vertical: 'middle', horizontal: 'left' };
+
+        const totalValueCell = totalRow.getCell(17);
+        totalValueCell.value = parseFloat(grandTotalNet.toFixed(2));
+        totalValueCell.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: '1E7E34' } };
+        totalValueCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        totalValueCell.numFmt = '#,##0.00';
+
+        totalRow.eachCell((cell) => {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D4EFDF' } };
+            cell.border = {
+                top: { style: 'medium', color: { argb: '27AE60' } },
+                bottom: { style: 'double', color: { argb: '27AE60' } },
+                left: { style: 'thin', color: { argb: '27AE60' } },
+                right: { style: 'thin', color: { argb: '27AE60' } }
+            };
+        });
+
+        worksheet.columns.forEach((column) => {
+            let maxLen = 0;
+            column.eachCell({ includeEmpty: true }, (cell) => {
+                const len = cell.value ? cell.value.toString().length : 0;
+                if (len > maxLen) maxLen = len;
+            });
+            column.width = Math.max(maxLen + 4, 12);
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        saveAs(blob, `payroll_report_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+
+    function printFullSheet() {
+        const titleInput = document.getElementById('slipTitle').value.trim() || 'كشف المرتبات المجمع';
+        const dateInput = document.getElementById('slipDateInput').value || new Date().toISOString().slice(0, 10);
+
+        document.getElementById('printMainTitle').innerText = titleInput;
+        document.getElementById('printMainDate').innerText = `التاريخ: ${dateInput}`;
+
+        window.print();
+    }
+
+    function deleteEmp(id) {
+        if(confirm('هل أنت تأكد من حذف هذا الموظف؟')) {
+            employees = employees.filter(e => e.id !== id);
+            renderTable();
+        }
+    }
+
+    function exportData() {
+        if(employees.length === 0) {
+            alert('لا توجد بيانات موظفين لتحميلها!');
+            return;
+        }
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(employees, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `payroll_data_${new Date().toISOString().slice(0,10)}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    }
+
+    function importData(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const importedEmployees = JSON.parse(e.target.result);
+                if (Array.isArray(importedEmployees)) {
+                    employees = importedEmployees;
+                    renderTable();
+                    alert('تم استعادة بيانات الموظفين بنجاح.');
+                } else {
+                    alert('صيغة الملف غير صحيحة.');
+                }
+            } catch (err) {
+                alert('حدث خطأ أثناء قراءة الملف!');
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function openPayslip(id) {
+        const emp = employees.find(e => e.id === id);
+        if (!emp) return;
+
+        document.getElementById('slipDeptTop').innerText = `إدارة: ${emp.dept}`;
+        document.getElementById('slipSectionTop').innerText = `قسم: ${emp.section}`;
+        
+        document.getElementById('slipCustomTitle').innerText = emp.slipTitle || 'مفردات مرتب';
+        document.getElementById('slipDateDisplay').innerText = `التاريخ: ${emp.slipDate || ''}`;
+
+        document.getElementById('slipJob').innerText = emp.jobTitle;
+        document.getElementById('slipName').innerText = emp.name;
+        document.getElementById('slipBasic').innerText = emp.basic.toLocaleString('ar-EG', {maximumFractionDigits:2});
+        document.getElementById('slipAllowances').innerText = emp.totalAllowances.toLocaleString('ar-EG', {maximumFractionDigits:2});
+        document.getElementById('slipOvertime').innerText = emp.totalOvertime.toLocaleString('ar-EG', {maximumFractionDigits:2});
+
+        const bonusRow = document.getElementById('slipBonusRow');
+        if (emp.bonus && emp.bonus > 0) {
+            bonusRow.style.display = 'flex';
+            document.getElementById('slipBonus').innerText = emp.bonus.toLocaleString('ar-EG', {maximumFractionDigits:2});
+        } else {
+            bonusRow.style.display = 'none';
+        }
+
+        document.getElementById('slipGross').innerText = emp.grossSalary.toLocaleString('ar-EG', {maximumFractionDigits:2});
+        document.getElementById('slipAdvance').innerText = formatDeduction(emp.advance);
+        document.getElementById('slipDeductions').innerText = formatDeduction(emp.totalDeductions);
+        document.getElementById('slipNet').innerText = emp.netSalary.toLocaleString('ar-EG', {maximumFractionDigits:2});
+
+        document.getElementById('payslip-modal').style.display = 'flex';
+    }
+
+    function closePayslip() {
+        document.getElementById('payslip-modal').style.display = 'none';
+        document.body.classList.remove('printing-slip');
+    }
+
+    function printSingleSlip() {
+        document.body.classList.add('printing-slip');
+        window.print();
+        setTimeout(() => {
+            document.body.classList.remove('printing-slip');
+        }, 500);
+    }
+
+    // تسجيل الـ Service Worker علشان التطبيق يشتغل زي برنامج (حتى من غير نت بعد أول فتح)
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('service-worker.js').catch(err => {
+                console.log('Service worker registration failed:', err);
+            });
+        });
+    }
+</script>
+
+</body>
+</html>
